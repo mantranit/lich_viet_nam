@@ -65,7 +65,7 @@ class CalendarConverter {
 
   //Tính ngày Sóc thứ k kể từ điểm Sóc ngày 1/1/1900.
   //Kết quả trả về là số ngày Julius của ngày Sóc cần tìm
-  static int getNewMoonDay(int k, int timeZone) {
+  static int getNewMoonDay(int k, Timezone timeZone) {
     var T, T2, T3, dr, Jd1, M, Mpr, F, C1, deltat, JdNew;
     T = k / 1236.85; // Time in Julian centuries from 1900 January 0.5
     T2 = T * T;
@@ -107,16 +107,16 @@ class CalendarConverter {
     }
     ;
     JdNew = Jd1 + C1 - deltat;
-    return INT(JdNew + 0.5 + timeZone / 24);
+    return INT(JdNew + 0.5 + getTimeZoneValue(timeZone) / 24);
   }
 
   //Tính tọa độ mặt trời để biết Trung khí nào nằm trong tháng âm lịch nào,
   //Tính xem mặt trời nằm ở khoảng nào trên đường hoàng đạo vào thời điểm bắt đầu một tháng âm lịch:
   //-chia đường hoàng đạo làm 12 phần và đánh số các cung này từ 0 đến 11: từ Xuân phân đến Cốc vũ là 0; từ Cốc vũ đến Tiểu mãn là 1; từ Tiểu mãn đến Hạ chí là 2; v.v..
   //-cho jdn là số ngày Julius của bất kỳ một ngày, phương pháp sau này sẽ trả lại số cung nói trên.
-  static int getSunLongitude(jdn, timeZone) {
+  static int getSunLongitude(int jdn, Timezone timeZone) {
     var T, T2, dr, M, L0, DL, L;
-    T = (jdn - 2451545.5 - timeZone / 24) /
+    T = (jdn - 2451545.5 - getTimeZoneValue(timeZone) / 24) /
         36525; // Time in Julian centuries from 2000-01-01 12:00:00 GMT
     T2 = T * T;
     dr = pi / 180; // degree to radian
@@ -138,7 +138,7 @@ class CalendarConverter {
   //Tìm ngày bắt đầu tháng 11 âm lịch
   //Đông chí thường nằm vào khoảng 19/12-22/12, như vậy trước hết ta tìm ngày Sóc trước ngày 31/12.
   //Nếu tháng bắt đầu vào ngày đó không chứa Đông chí thì ta phải lùi lại 1 tháng nữa.
-  static int getLunarMonth11(int yy, int timeZone) {
+  static int getLunarMonth11(int yy, Timezone timeZone) {
     var k, off, nm, sunLong;
     off = jdFromDate(31, 12, yy) - 2415021;
     k = INT(off / 29.530588853);
@@ -152,7 +152,7 @@ class CalendarConverter {
 
   //Xác định tháng nhuận
   //Nếu giữa hai tháng 11 âm lịch (tức tháng có chứa Đông chí) có 13 tháng âm lịch thì năm âm lịch đó có tháng nhuận.
-  static int getLeapMonthOffset(int a11, int timeZone) {
+  static int getLeapMonthOffset(int a11, Timezone timeZone) {
     var k, last, arc, i;
     k = INT((a11 - 2415021.076998695) / 29.530588853 + 0.5);
     last = 0;
@@ -182,10 +182,9 @@ class CalendarConverter {
 
   //Convert solar day to lunar day
   static List<int> solarToLunar(
-      int solarYear, int solarMonth, int solarDay, Timezone timezone) {
+      int solarYear, int solarMonth, int solarDay, Timezone timeZone) {
     List<int> result = List.filled(4, 0);
 
-    var utcValue = getTimeZoneValue(timezone);
     var k,
         dayNumber,
         monthStart,
@@ -197,25 +196,25 @@ class CalendarConverter {
         lunarLeap;
     dayNumber = jdFromDate(solarDay, solarMonth, solarYear);
     k = INT((dayNumber - 2415021.076998695) / 29.530588853);
-    monthStart = getNewMoonDay(k + 1, utcValue);
+    monthStart = getNewMoonDay(k + 1, timeZone);
     if (monthStart > dayNumber) {
-      monthStart = getNewMoonDay(k, utcValue);
+      monthStart = getNewMoonDay(k, timeZone);
     }
-    a11 = getLunarMonth11(solarYear, utcValue);
+    a11 = getLunarMonth11(solarYear, timeZone);
     b11 = a11;
     if (a11 >= monthStart) {
       lunarYear = solarYear;
-      a11 = getLunarMonth11(solarYear - 1, utcValue);
+      a11 = getLunarMonth11(solarYear - 1, timeZone);
     } else {
       lunarYear = solarYear + 1;
-      b11 = getLunarMonth11(solarYear + 1, utcValue);
+      b11 = getLunarMonth11(solarYear + 1, timeZone);
     }
     lunarDay = dayNumber - monthStart + 1;
     var diff = INT((monthStart - a11) / 29);
     lunarLeap = 0;
     lunarMonth = diff + 11;
     if (b11 - a11 > 365) {
-      var leapMonthDiff = getLeapMonthOffset(a11, utcValue);
+      var leapMonthDiff = getLeapMonthOffset(a11, timeZone);
       if (diff >= leapMonthDiff) {
         lunarMonth = diff + 10;
         if (diff == leapMonthDiff) {
@@ -239,25 +238,24 @@ class CalendarConverter {
   }
 
   //Convert lunar day to solar day
-  List<int> lunarToSolar(int lunarYear, int lunarMonth, int lunarDay,
-      int lunarLeap, Timezone timezone) {
+  static List<int> lunarToSolar(int lunarYear, int lunarMonth, int lunarDay,
+      int lunarLeap, Timezone timeZone) {
     List<int> result = List.filled(3, 0);
 
-    var utcValue = getTimeZoneValue(timezone);
     var k, a11, b11, off, leapOff, leapMonth, monthStart;
     if (lunarMonth < 11) {
-      a11 = getLunarMonth11(lunarYear - 1, utcValue);
-      b11 = getLunarMonth11(lunarYear, utcValue);
+      a11 = getLunarMonth11(lunarYear - 1, timeZone);
+      b11 = getLunarMonth11(lunarYear, timeZone);
     } else {
-      a11 = getLunarMonth11(lunarYear, utcValue);
-      b11 = getLunarMonth11(lunarYear + 1, utcValue);
+      a11 = getLunarMonth11(lunarYear, timeZone);
+      b11 = getLunarMonth11(lunarYear + 1, timeZone);
     }
     off = lunarMonth - 11;
     if (off < 0) {
       off += 12;
     }
     if (b11 - a11 > 365) {
-      leapOff = getLeapMonthOffset(a11, utcValue);
+      leapOff = getLeapMonthOffset(a11, timeZone);
       leapMonth = leapOff - 2;
       if (leapMonth < 0) {
         leapMonth += 12;
@@ -271,7 +269,7 @@ class CalendarConverter {
       }
     }
     k = INT(0.5 + (a11 - 2415021.076998695) / 29.530588853);
-    monthStart = getNewMoonDay(k + off, utcValue);
+    monthStart = getNewMoonDay(k + off, timeZone);
     return jdToDate(monthStart + lunarDay - 1);
   }
 }
